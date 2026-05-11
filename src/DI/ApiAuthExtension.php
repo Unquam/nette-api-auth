@@ -21,7 +21,7 @@ class ApiAuthExtension extends CompilerExtension
             'tokenTable'      => Expect::string('api_tokens'),
 
             // table name for users
-            'userTable'       => Expect::string('users'),
+            'userTable'       => Expect::string('api_users'),
 
             // table name for refresh tokens
             'refreshTable'    => Expect::string('refresh_tokens'),

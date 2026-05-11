@@ -32,7 +32,7 @@ class ApiTokenServiceTest extends TestCase
             $this->database,
             $this->scopeService,
             'api_tokens',
-            'users',
+            'api_users',
             'sk_test_',
             'sk_live_',
             'test-secret-key'
@@ -199,7 +199,7 @@ class ApiTokenServiceTest extends TestCase
         $this->database->shouldReceive('table')
             ->with('api_tokens')->andReturn($tokenSelection);
         $this->database->shouldReceive('table')
-            ->with('users')->andReturn($userSelection);
+            ->with('api_users')->andReturn($userSelection);
 
         $result = $this->service->validate('sk_test_somevalidtoken');
 
@@ -234,7 +234,7 @@ class ApiTokenServiceTest extends TestCase
         $this->database->shouldReceive('table')
             ->with('api_tokens')->andReturn($tokenSelection);
         $this->database->shouldReceive('table')
-            ->with('users')->andReturn($userSelection);
+            ->with('api_users')->andReturn($userSelection);
 
         Assert::null($this->service->validate('sk_test_sometoken'));
     }

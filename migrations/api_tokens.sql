@@ -13,5 +13,5 @@ CREATE TABLE `api_tokens` (
     UNIQUE KEY `token` (`token`),
     KEY `user_id` (`user_id`),
     KEY `expires_at` (`expires_at`),
-    FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+    FOREIGN KEY (`user_id`) REFERENCES `api_users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

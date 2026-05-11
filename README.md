@@ -50,7 +50,7 @@ apiAuth:
     secret: your-random-secret-string   # required, used for HMAC token hashing
 
     tokenTable:      api_tokens         # table that stores access tokens
-    userTable:       users              # table that stores your application users
+    userTable:       api_users          # table that stores API users
     refreshTable:    refresh_tokens     # table that stores refresh tokens
     rateLimitTable:  rate_limits        # table that stores rate limit counters
 
@@ -70,7 +70,7 @@ apiAuth:
     corsOrigins: []                     # allowed CORS origins, empty list means all origins are accepted
     publicPaths: []                     # paths that skip authentication (middleware only)
 
-    userColumns:                        # column names in your users table
+    userColumns:                        # column names in your api_users table
         id:    id
         email: email
         role:  role

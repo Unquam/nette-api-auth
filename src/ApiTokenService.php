@@ -35,7 +35,7 @@ class ApiTokenService
         Explorer $database,
         ScopeService $scopeService,
         string $tokenTable  = 'api_tokens',
-        string $userTable   = 'users',
+        string $userTable   = 'api_users',
         string $testPrefix  = 'sk_test_',
         string $livePrefix  = 'sk_live_',
         string $secret      = '',
