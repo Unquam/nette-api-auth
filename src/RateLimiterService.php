@@ -43,6 +43,11 @@ class RateLimiterService
         $max         = $isLive ? $this->maxLive : $this->maxTest;
         $windowStart = $this->getWindowStart();
 
+        // cleanup old records occasionally (1% of requests)
+        if (mt_rand(1, 100) === 1) {
+            $this->cleanup();
+        }
+
         $row = $this->database->table($this->table)
             ->where('key', $key)
             ->fetch();
@@ -107,6 +112,14 @@ class RateLimiterService
         $row->update(['hits' => $row->hits + 1]);
 
         return false;
+    }
+
+    // delete rate limit records older than current window
+    private function cleanup(): void
+    {
+        $this->database->table($this->table)
+            ->where('`window` < ?', $this->getWindowStart())
+            ->delete();
     }
 
     // get remaining requests for key
