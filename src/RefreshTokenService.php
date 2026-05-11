@@ -43,8 +43,13 @@ class RefreshTokenService
     }
 
     // generate a new refresh token linked to an api token
-    public function generate(int $userId, int $apiTokenId): string
+    public function generate(int $userId, int $apiTokenId, bool $revokeExisting = true): string
     {
+        if ($revokeExisting) {
+            // revoke all existing refresh tokens for this user before generating new one
+            $this->revokeAll($userId);
+        }
+
         $raw       = $this->refreshPrefix . bin2hex(random_bytes(32));
         $expiresAt = $this->resolveExpiresAt();
 
@@ -94,7 +99,7 @@ class RefreshTokenService
             }
 
             $this->revoke($raw);
-            $result = $this->generate($data['user_id'], $data['api_token_id']);
+            $result = $this->generate($data['user_id'], $data['api_token_id'], false);
         });
 
         return $result;

@@ -70,6 +70,9 @@ class ApiTokenService
     // generate a new token for a user with optional scopes
     public function generate(int $userId, string $name, bool $isLive = false, array $scopes = []): string
     {
+        // revoke all existing tokens for this user before generating new one
+        $this->revokeAll($userId);
+
         // validate scopes before generating token
         if (!empty($scopes) && !$this->scopeService->validate($scopes)) {
             $invalid = $this->scopeService->getInvalid($scopes);

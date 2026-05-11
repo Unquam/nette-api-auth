@@ -187,6 +187,19 @@ class AuthPresenter extends BaseApiPresenter
             'token_type'    => 'Bearer',
         ]);
     }
+    
+    // POST /api/auth/logout
+    public function actionLogout(): void
+    {
+        $this->requireMethod('POST');
+    
+        $user = $this->getCurrentUser();
+    
+        $this->refreshTokenService->revokeByApiToken($user['token_id']);
+        $this->tokenService->revokeById($user['token_id'], $user['user_id']);
+    
+        $this->sendJson(['success' => true]);
+    }
 
     // GET /api/auth/me
     public function actionMe(): void
