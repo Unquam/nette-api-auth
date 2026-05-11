@@ -137,13 +137,6 @@ Save the raw token immediately after receiving it. It is shown exactly once and 
 ## Token Format
 
 Tokens are prefixed so you can instantly tell which mode they belong to.
-
-```
-sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-rt_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
 You can customise all three prefixes in the configuration.
 
 ## Usage with BaseApiPresenter
