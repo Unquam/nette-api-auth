@@ -17,6 +17,7 @@ composer require unquam/nette-api-auth
 Run all three migration files to create the required tables.
 
 ```bash
+mysql -u root -p your_database < vendor/unquam/nette-api-auth/migrations/api_users.sql
 mysql -u root -p your_database < vendor/unquam/nette-api-auth/migrations/api_tokens.sql
 mysql -u root -p your_database < vendor/unquam/nette-api-auth/migrations/refresh_tokens.sql
 mysql -u root -p your_database < vendor/unquam/nette-api-auth/migrations/rate_limits.sql
