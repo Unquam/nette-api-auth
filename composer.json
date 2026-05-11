@@ -1,0 +1,49 @@
+{
+  "name": "unquam/nette-api-auth",
+  "description": "Simple API token authentication for Nette Framework. Inspired by Laravel Sanctum.",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "nette",
+    "api",
+    "token",
+    "auth",
+    "authentication",
+    "sanctum"
+  ],
+  "authors": [
+    {
+      "name": "Unquam",
+      "homepage": "https://github.com/Unquam"
+    }
+  ],
+  "require": {
+    "php": ">=7.4",
+    "nette/application": "^3.0|^3.1|^3.2",
+    "nette/database": "^3.0|^3.1|^3.2",
+    "nette/di": "^3.0|^3.1|^3.2",
+    "nette/schema": "^1.1"
+  },
+  "require-dev": {
+    "nette/tester": "^2.4",
+    "phpstan/phpstan": "^1.0",
+    "mockery/mockery": "^1.6"
+  },
+  "suggest": {
+    "contributte/middlewares": "Required if you want to use ApiAuthMiddleware instead of BaseApiPresenter",
+    "psr/http-message": "Required by ApiAuthMiddleware when using contributte/middlewares"
+  },
+  "autoload": {
+    "psr-4": {
+      "Unquam\\NetteApiAuth\\": "src/"
+    },
+    "files": ["src/compat.php"]
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Unquam\\NetteApiAuth\\Tests\\": "tests/"
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

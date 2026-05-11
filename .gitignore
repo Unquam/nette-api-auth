@@ -1,0 +1,21 @@
+# Composer
+/vendor/
+composer.lock
+
+# PHP
+*.log
+*.cache
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+/tests/tmp/
+/coverage/
