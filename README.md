@@ -119,17 +119,20 @@ use Unquam\NetteApiAuth\ScopeService;
 class AuthPresenter extends BaseApiPresenter
 {
     private Explorer $database;
+    private RefreshTokenService $refreshTokenService;
 
-    protected array $publicActions = ['login'];
+    protected array $publicActions = ['login', 'refresh'];
 
     public function __construct(
         ApiTokenService $tokenService,
         ScopeService $scopeService,
         RateLimiterService $rateLimiter,
+        RefreshTokenService $refreshTokenService,
         Explorer $database
     ) {
         parent::__construct($tokenService, $scopeService, $rateLimiter);
-        $this->database = $database;
+        $this->refreshTokenService = $refreshTokenService;
+        $this->database            = $database;
     }
 
     // POST /api/auth/login
@@ -151,9 +154,13 @@ class AuthPresenter extends BaseApiPresenter
             $this->sendError(401, 'Invalid credentials');
         }
 
-        $tokenRaw = $this->tokenService->generate($user->id, 'web-app', false);
-        $tokenRow = $this->tokenService->findByRaw($tokenRaw);
+        $tokenRaw = $this->tokenService->generate(
+            $user->id,
+            'web-app',
+            false
+        );
 
+        $tokenRow     = $this->tokenService->findByRaw($tokenRaw);
         $refreshToken = $this->refreshTokenService->generate($user->id, $tokenRow['id']);
 
         $this->sendJson([
@@ -201,17 +208,35 @@ declare(strict_types=1);
 
 namespace App\Presentation\Api;
 
+use Nette\Database\Explorer;
+use Unquam\NetteApiAuth\ApiTokenService;
 use Unquam\NetteApiAuth\BaseApiPresenter;
+use Unquam\NetteApiAuth\RateLimiterService;
+use Unquam\NetteApiAuth\ScopeService;
 
 class ArticlePresenter extends BaseApiPresenter
 {
+    private Explorer $database;
+
     protected array $publicActions = ['list', 'show'];
+
+    public function __construct(
+        ApiTokenService $tokenService,
+        ScopeService $scopeService,
+        RateLimiterService $rateLimiter,
+        Explorer $database
+    ) {
+        parent::__construct($tokenService, $scopeService, $rateLimiter);
+        $this->database = $database;
+    }
 
     // GET /api/articles
     public function actionList(): void
     {
         $this->requireMethod('GET');
-        $this->sendJson($this->articleService->findAll());
+        $this->sendJson(
+            $this->database->table('articles')->fetchAll()
+        );
     }
 
     // POST /api/articles
@@ -221,9 +246,14 @@ class ArticlePresenter extends BaseApiPresenter
 
         $user = $this->getCurrentUser();
         $data = $this->getJsonBody();
-        $data['author_id'] = $user['user_id'];
 
-        $this->sendJson($this->articleService->create($data));
+        $this->database->table('articles')->insert([
+            'title'     => $data['title'],
+            'body'      => $data['body'],
+            'author_id' => $user['user_id'],
+        ]);
+
+        $this->sendJson(['success' => true]);
     }
 
     // DELETE /api/articles/:id
@@ -232,7 +262,7 @@ class ArticlePresenter extends BaseApiPresenter
         $this->requireMethod('DELETE');
         $this->requireRole('admin');
 
-        $this->articleService->delete($id);
+        $this->database->table('articles')->where('id', $id)->delete();
         $this->sendJson(['success' => true]);
     }
 }
@@ -243,10 +273,19 @@ class ArticlePresenter extends BaseApiPresenter
 Every token is either a live token or a test token, determined by the third argument passed to `generate()`. Inside any action you can check which mode the current request is using and behave accordingly.
 
 ```php
-if ($this->isLiveMode()) {
-    $result = $this->paymentGateway->chargeReal($data);
-} else {
-    $result = $this->paymentGateway->chargeSandbox($data);
+public function actionCharge(): void
+{
+    $this->requireMethod('POST');
+
+    $data = $this->getJsonBody();
+
+    if ($this->isLiveMode()) {
+        // real payment — token starts with sk_live_
+        $this->sendJson(['status' => 'charged', 'amount' => $data['amount']]);
+    } else {
+        // sandbox — token starts with sk_test_
+        $this->sendJson(['status' => 'sandbox', 'amount' => $data['amount']]);
+    }
 }
 ```
 
