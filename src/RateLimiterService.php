@@ -79,7 +79,7 @@ class RateLimiterService
         // normal increment path after a fresh fetch
         if ($row->window < $windowStart) {
             $affected = $this->database->query(
-                'UPDATE ' . $this->table . ' SET hits = 1, window = ? WHERE `key` = ? AND window < ?',
+                'UPDATE ' . $this->table . ' SET hits = 1, `window` = ? WHERE `key` = ? AND `window` < ?',
                 $windowStart,
                 $key,
                 $windowStart
