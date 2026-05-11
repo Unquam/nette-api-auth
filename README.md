@@ -157,7 +157,7 @@ class AuthPresenter extends BaseApiPresenter
         $tokenRaw = $this->tokenService->generate(
             $user->id,
             'web-app',
-            false
+            false // false = test token (sk_test_), true = live token (sk_live_)
         );
 
         $tokenRow     = $this->tokenService->findByRaw($tokenRaw);
@@ -283,22 +283,25 @@ class ArticlePresenter extends BaseApiPresenter
 
 ## Live and Test Mode
 
-Every token is either a live token or a test token, determined by the third argument passed to `generate()`. Inside any action you can check which mode the current request is using and behave accordingly.
+Every token is either a live token or a test token, determined by the third argument passed to `generate()`.
 
 ```php
-public function actionCharge(): void
-{
-    $this->requireMethod('POST');
+// generate a test token — prefix sk_test_
+$tokenRaw = $this->tokenService->generate($user->id, 'web-app', false);
 
-    $data = $this->getJsonBody();
+// generate a live token — prefix sk_live_
+$tokenRaw = $this->tokenService->generate($user->id, 'web-app', true);
+```
 
-    if ($this->isLiveMode()) {
-        // real payment — token starts with sk_live_
-        $this->sendJson(['status' => 'charged', 'amount' => $data['amount']]);
-    } else {
-        // sandbox — token starts with sk_test_
-        $this->sendJson(['status' => 'sandbox', 'amount' => $data['amount']]);
-    }
+Inside any action you can check which mode the current request is using and behave accordingly.
+
+```php
+if ($this->isLiveMode()) {
+    // token starts with sk_live_ — production mode
+    $this->sendJson(['status' => 'charged', 'amount' => $data['amount']]);
+} else {
+    // token starts with sk_test_ — sandbox mode
+    $this->sendJson(['status' => 'sandbox', 'amount' => $data['amount']]);
 }
 ```
 
