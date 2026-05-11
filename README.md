@@ -26,7 +26,21 @@ The `api_tokens` table stores hashed access tokens. The `refresh_tokens` table s
 
 ## Configuration
 
-Register the extension in your `config/common.neon` file and provide at minimum the required `secret` key.
+First generate a secure secret key.
+
+```bash
+openssl rand -hex 32
+```
+
+Then register the extension in your `config/common.neon` and paste the generated key as the `secret` value.
+
+```neon
+extensions:
+    apiAuth: Unquam\NetteApiAuth\DI\ApiAuthExtension
+
+apiAuth:
+    secret: 'paste-your-generated-secret-here'
+```
 
 ```neon
 extensions:
