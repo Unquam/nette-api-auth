@@ -24,13 +24,13 @@ abstract class BaseApiPresenter extends Presenter
     private array $corsOrigins;
 
     // token service instance
-    private ApiTokenService $tokenService;
+    protected ApiTokenService $tokenService;
 
     // scope service instance
-    private ScopeService $scopeService;
+    protected ScopeService $scopeService;
 
     // rate limiter service instance
-    private RateLimiterService $rateLimiter;
+    protected RateLimiterService $rateLimiter;
 
     public function __construct(
         ApiTokenService $tokenService,
