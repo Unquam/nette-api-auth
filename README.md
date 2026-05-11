@@ -14,7 +14,7 @@ composer require unquam/nette-api-auth
 
 ## Database Setup
 
-Run all three migration files to create the required tables.
+The package uses a separate `api_users` table to keep API authentication completely independent from your web authentication. Run the migration files in order — `api_users` must be created first because the other tables reference it.
 
 ```bash
 mysql -u root -p your_database < vendor/unquam/nette-api-auth/migrations/api_users.sql
@@ -27,7 +27,7 @@ The `api_tokens` table stores hashed access tokens. The `refresh_tokens` table s
 
 ## Configuration
 
-First generate a secure secret key.
+First generate a secure secret key and keep it somewhere safe. This key is used to hash all tokens and must never change — if you change it, all existing tokens will become invalid.
 
 ```bash
 openssl rand -hex 32
@@ -40,38 +40,30 @@ extensions:
     apiAuth: Unquam\NetteApiAuth\DI\ApiAuthExtension
 
 apiAuth:
-    secret: 'paste-your-generated-secret-here'
-```
+    secret: 'paste-your-generated-secret-here'   # required, never change this after tokens are issued
 
-```neon
-extensions:
-    apiAuth: Unquam\NetteApiAuth\DI\ApiAuthExtension
+    tokenTable:      api_tokens       # table that stores access tokens
+    userTable:       api_users        # table that stores API users
+    refreshTable:    refresh_tokens   # table that stores refresh tokens
+    rateLimitTable:  rate_limits      # table that stores rate limit counters
 
-apiAuth:
-    secret: your-random-secret-string   # required, used for HMAC token hashing
+    testPrefix:    sk_test_           # prefix for test-mode tokens
+    livePrefix:    sk_live_           # prefix for live-mode tokens
+    refreshPrefix: rt_                # prefix for refresh tokens
 
-    tokenTable:      api_tokens         # table that stores access tokens
-    userTable:       api_users          # table that stores API users
-    refreshTable:    refresh_tokens     # table that stores refresh tokens
-    rateLimitTable:  rate_limits        # table that stores rate limit counters
+    ttl:        null                  # access token lifetime in minutes, null means unlimited
+    refreshTtl: null                  # refresh token lifetime in minutes, null means unlimited
 
-    testPrefix:    sk_test_             # prefix for test-mode tokens
-    livePrefix:    sk_live_             # prefix for live-mode tokens
-    refreshPrefix: rt_                  # prefix for refresh tokens
+    rateLimitTest:   60               # max requests per window for test tokens
+    rateLimitLive:   1000             # max requests per window for live tokens
+    rateLimitWindow: 60               # window size in seconds
 
-    ttl:        null                    # access token lifetime in minutes, null means unlimited
-    refreshTtl: null                    # refresh token lifetime in minutes, null means unlimited
+    scopes: []                        # allowed scopes, empty list means all scopes are accepted
 
-    rateLimitTest:   60                 # max requests per window for test tokens
-    rateLimitLive:   1000               # max requests per window for live tokens
-    rateLimitWindow: 60                 # window size in seconds
+    corsOrigins: []                   # allowed CORS origins, empty list means all origins are accepted
+    publicPaths: []                   # paths that skip authentication (middleware only)
 
-    scopes: []                          # allowed scopes, empty list means all scopes are accepted
-
-    corsOrigins: []                     # allowed CORS origins, empty list means all origins are accepted
-    publicPaths: []                     # paths that skip authentication (middleware only)
-
-    userColumns:                        # column names in your api_users table
+    userColumns:                      # column names in your api_users table
         id:    id
         email: email
         role:  role
@@ -90,9 +82,9 @@ apiAuth:
     ttl: 43200   # 30 days
 ```
 
-### User Table Columns
+### Custom User Table Columns
 
-If your users table uses different column names, map them with `userColumns`. For example, if your role column is called `user_role` and your email column is `email_address`:
+If your `api_users` table uses different column names, map them with `userColumns`.
 
 ```neon
 apiAuth:
@@ -106,62 +98,108 @@ apiAuth:
 
 When a token is generated, the package creates a random raw value and stores only its HMAC-SHA256 hash in the database. The raw token is returned to you once and never stored again. On every subsequent request the incoming token is hashed with the same secret and compared against the stored hash, so even if someone reads your database they cannot recover usable tokens.
 
-## Generating Tokens
+## Authentication Presenter
 
-Inject `ApiTokenService` into your presenter or service and call `generate()` at login time. The third argument controls whether the token operates in live mode (`true`) or test mode (`false`). The optional fourth argument is an array of scopes to assign to the token.
-
-```php
-public function actionLogin(): void
-{
-    $this->requireMethod('POST');
-
-    $data = $this->getJsonBody();
-    $user = $this->userService->findByEmail($data['email']);
-
-    if (!$user || !password_verify($data['password'], $user->password)) {
-        $this->sendError(401, 'Invalid credentials');
-    }
-
-    // generate access token
-    $tokenRaw = $this->tokenService->generate(
-        $user->id,
-        'web-app',
-        false,
-        ['read', 'write']
-    );
-
-    // find token row to get its database id for refresh token
-    $tokenRow = $this->tokenService->findByRaw($tokenRaw);
-
-    // generate refresh token linked to access token
-    $refreshToken = $this->refreshTokenService->generate(
-        $user->id,
-        $tokenRow['id']
-    );
-
-    $this->sendJson([
-        'access_token'  => $tokenRaw,
-        'refresh_token' => $refreshToken,
-        'token_type'    => 'Bearer',
-    ]);
-}
-```
-
-Save the raw token immediately after receiving it. It is shown exactly once and cannot be recovered from the database.
-
-## Token Format
-
-Tokens are prefixed so you can instantly tell which mode they belong to.
-You can customise all three prefixes in the configuration.
-
-## Usage with BaseApiPresenter
-
-Extend your presenters from `BaseApiPresenter` and all authentication, rate limiting, and CORS handling is taken care of automatically on every request. Actions listed in the `$publicActions` property are skipped entirely, meaning no token is required to reach them.
+The first thing you need is an `AuthPresenter` that handles login and issues tokens. Extend it from `BaseApiPresenter`, mark the `login` action as public so it does not require a token, and inject the database to look up users.
 
 ```php
 <?php
 
-namespace App\Api\Presenters;
+declare(strict_types=1);
+
+namespace App\Presentation\Api;
+
+use Nette\Database\Explorer;
+use Unquam\NetteApiAuth\ApiTokenService;
+use Unquam\NetteApiAuth\BaseApiPresenter;
+use Unquam\NetteApiAuth\RateLimiterService;
+use Unquam\NetteApiAuth\RefreshTokenService;
+use Unquam\NetteApiAuth\ScopeService;
+
+class AuthPresenter extends BaseApiPresenter
+{
+    private Explorer $database;
+
+    protected array $publicActions = ['login'];
+
+    public function __construct(
+        ApiTokenService $tokenService,
+        ScopeService $scopeService,
+        RateLimiterService $rateLimiter,
+        Explorer $database
+    ) {
+        parent::__construct($tokenService, $scopeService, $rateLimiter);
+        $this->database = $database;
+    }
+
+    // POST /api/auth/login
+    public function actionLogin(): void
+    {
+        $this->requireMethod('POST');
+
+        $data = $this->getJsonBody();
+
+        if (empty($data['email']) || empty($data['password'])) {
+            $this->sendError(422, 'Email and password are required');
+        }
+
+        $user = $this->database->table('api_users')
+            ->where('email', $data['email'])
+            ->fetch();
+
+        if (!$user || !password_verify($data['password'], $user->password)) {
+            $this->sendError(401, 'Invalid credentials');
+        }
+
+        $tokenRaw = $this->tokenService->generate($user->id, 'web-app', false);
+        $tokenRow = $this->tokenService->findByRaw($tokenRaw);
+
+        $refreshToken = $this->refreshTokenService->generate($user->id, $tokenRow['id']);
+
+        $this->sendJson([
+            'access_token'  => $tokenRaw,
+            'refresh_token' => $refreshToken,
+            'token_type'    => 'Bearer',
+        ]);
+    }
+
+    // POST /api/auth/refresh
+    public function actionRefresh(): void
+    {
+        $this->requireMethod('POST');
+
+        $data            = $this->getJsonBody();
+        $newRefreshToken = $this->refreshTokenService->rotate($data['refresh_token']);
+
+        if (!$newRefreshToken) {
+            $this->sendError(401, 'Invalid or expired refresh token');
+        }
+
+        $this->sendJson([
+            'refresh_token' => $newRefreshToken,
+            'token_type'    => 'Bearer',
+        ]);
+    }
+
+    // GET /api/auth/me
+    public function actionMe(): void
+    {
+        $this->requireMethod('GET');
+        $this->sendJson($this->getCurrentUser());
+    }
+}
+```
+
+## Usage with BaseApiPresenter
+
+Extend your API presenters from `BaseApiPresenter` and all authentication, rate limiting, and CORS handling is taken care of automatically on every request. Actions listed in the `$publicActions` property are skipped entirely, meaning no token is required to reach them.
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Presentation\Api;
 
 use Unquam\NetteApiAuth\BaseApiPresenter;
 
@@ -169,12 +207,14 @@ class ArticlePresenter extends BaseApiPresenter
 {
     protected array $publicActions = ['list', 'show'];
 
+    // GET /api/articles
     public function actionList(): void
     {
         $this->requireMethod('GET');
         $this->sendJson($this->articleService->findAll());
     }
 
+    // POST /api/articles
     public function actionStore(): void
     {
         $this->requireMethod('POST');
@@ -186,6 +226,7 @@ class ArticlePresenter extends BaseApiPresenter
         $this->sendJson($this->articleService->create($data));
     }
 
+    // DELETE /api/articles/:id
     public function actionDestroy(int $id): void
     {
         $this->requireMethod('DELETE');
@@ -224,15 +265,15 @@ apiAuth:
 When generating a token, pass the scopes you want to assign as the fourth argument.
 
 ```php
-$token = $this->tokenService->generate($userId, 'mobile-app', false, ['read', 'write']);
+$tokenRaw = $this->tokenService->generate($userId, 'mobile-app', false, ['read', 'write']);
 ```
 
-Inside a protected action you can then enforce scope requirements. `requireScope` demands that the token carries a specific scope. `requireAllScopes` demands that all listed scopes are present. `requireAnyScope` passes if the token carries at least one of the listed scopes.
+Inside a protected action you can then enforce scope requirements.
 
 ```php
-$this->requireScope('write');
-$this->requireAllScopes('read', 'write');
-$this->requireAnyScope('write', 'admin');
+$this->requireScope('write');             // token must have this scope
+$this->requireAllScopes('read', 'write'); // token must have all of these scopes
+$this->requireAnyScope('write', 'admin'); // token must have at least one of these scopes
 ```
 
 When a token was generated without any scopes, all scope checks pass automatically.
@@ -249,30 +290,9 @@ X-RateLimit-Remaining: 42
 
 When the limit is exceeded the response is a 429 with a JSON error body.
 
-The window is aligned to fixed time boundaries calculated from the Unix timestamp. A 60-second window always starts at the top of each UTC minute, so resets are predictable regardless of when the first request arrived.
-
 ## Refresh Tokens
 
-When an access token expires the client can use a refresh token to get a new one without asking the user to log in again. Calling `rotate()` atomically revokes the old refresh token and generates a replacement in a single database transaction, preventing reuse even under concurrent requests.
-
-```php
-public function actionRefresh(): void
-{
-    $this->requireMethod('POST');
-
-    $data = $this->getJsonBody();
-    $newRefreshToken = $this->refreshTokenService->rotate($data['refresh_token']);
-
-    if (!$newRefreshToken) {
-        $this->sendError(401, 'Invalid or expired refresh token');
-    }
-
-    $this->sendJson([
-        'refresh_token' => $newRefreshToken,
-        'token_type'    => 'Bearer',
-    ]);
-}
-```
+When an access token expires the client can use a refresh token to get a new one without asking the user to log in again. Calling `rotate()` atomically revokes the old refresh token and generates a replacement in a single database transaction, preventing reuse even under concurrent requests. See the `AuthPresenter` example above for the full implementation.
 
 ## Revoking Tokens
 
@@ -319,16 +339,16 @@ In Postman, open the Auth tab on your request, select Bearer Token from the type
 ## Available Methods in BaseApiPresenter
 
 ```php
-$this->getCurrentUser()                   // returns the authenticated user's data as an array
+$this->getCurrentUser()                   // returns the authenticated user data as an array
 $this->getCurrentScopes()                 // returns the scopes assigned to the current token
 $this->isLiveMode()                       // returns true when the request uses a live token
 $this->requireMethod('GET', 'POST')       // terminates with 405 if the HTTP method is not listed
-$this->requireRole('admin')               // terminates with 403 if the user's role does not match
-$this->requireScope('write')              // terminates with 403 if the token lacks the scope
-$this->requireAllScopes('read', 'write')  // terminates with 403 unless all scopes are present
-$this->requireAnyScope('write', 'admin')  // terminates with 403 unless at least one scope is present
-$this->getJsonBody()                      // decodes the request body as JSON, returns 400 on invalid input
-$this->sendError(401, 'Unauthorized')     // sends a JSON error response and terminates
+$this->requireRole('admin')              // terminates with 403 if the user role does not match
+$this->requireScope('write')             // terminates with 403 if the token lacks the scope
+$this->requireAllScopes('read', 'write') // terminates with 403 unless all scopes are present
+$this->requireAnyScope('write', 'admin') // terminates with 403 unless at least one scope is present
+$this->getJsonBody()                     // decodes the request body as JSON, returns 400 on invalid input
+$this->sendError(401, 'Unauthorized')    // sends a JSON error response and terminates
 ```
 
 `getCurrentUser()` returns an array with the keys `user_id`, `email`, `role`, `is_live`, `token_id`, `expires_at`, and `scopes`.
@@ -351,3 +371,7 @@ apiAuth:
 ```
 
 When authentication succeeds the middleware attaches the user data to the request as an attribute named `user`, which subsequent middleware or handlers can read via `$request->getAttribute('user')`. The `X-RateLimit-Remaining` header is added to every successful response, and rate-limited requests receive a 429 with a JSON error body.
+
+## License
+
+This package is open source. You are free to fork it, modify it and use it in your projects.
